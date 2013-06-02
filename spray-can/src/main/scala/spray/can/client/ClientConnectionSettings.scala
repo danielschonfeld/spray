@@ -31,7 +31,8 @@ case class ClientConnectionSettings(
     responseChunkAggregationLimit: Int,
     requestSizeHint: Int,
     connectingTimeout: Duration,
-    parserSettings: ParserSettings) {
+    parserSettings: ParserSettings,
+    keepCookies : Boolean) {
 
   requirePositiveOrUndefined(idleTimeout)
   requirePositiveOrUndefined(requestTimeout)
@@ -60,7 +61,9 @@ object ClientConnectionSettings {
       c getBytes "response-chunk-aggregation-limit" toInt,
       c getBytes "request-size-hint" toInt,
       c getDuration "connecting-timeout",
-      ParserSettings(c getConfig "parsing"))
+      ParserSettings(c getConfig "parsing"),
+      c getBoolean "keep-cookies"
+    )
   }
 
   def apply(optionalSettings: Option[ClientConnectionSettings])(implicit actorRefFactory: ActorRefFactory): ClientConnectionSettings =
