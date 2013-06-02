@@ -32,7 +32,7 @@ case class ClientConnectionSettings(
     requestSizeHint: Int,
     connectingTimeout: Duration,
     parserSettings: ParserSettings,
-    keepCookies : Boolean) {
+    keepCookies: Boolean) {
 
   requirePositiveOrUndefined(idleTimeout)
   requirePositiveOrUndefined(requestTimeout)
@@ -62,8 +62,7 @@ object ClientConnectionSettings {
       c getBytes "request-size-hint" toInt,
       c getDuration "connecting-timeout",
       ParserSettings(c getConfig "parsing"),
-      c getBoolean "keep-cookies"
-    )
+      c getBoolean "keep-cookies")
   }
 
   def apply(optionalSettings: Option[ClientConnectionSettings])(implicit actorRefFactory: ActorRefFactory): ClientConnectionSettings =
