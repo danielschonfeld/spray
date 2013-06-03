@@ -80,6 +80,7 @@ private[can] object HttpClientConnection {
   def pipelineStage(settings: ClientConnectionSettings) = {
     import settings._
     ClientFrontend(requestTimeout) >>
+      CookieHandler() ? (keepCookies) >>
       ResponseChunkAggregation(responseChunkAggregationLimit) ? (responseChunkAggregationLimit > 0) >>
       ResponseParsing(parserSettings) >>
       RequestRendering(settings) >>
