@@ -5,38 +5,29 @@ import akka.actor.ActorRef
 import spray.can.Http
 import spray.http._
 import spray.can.rendering.HttpRequestPartRenderingContext
-import java.net.{ CookieManager, HttpCookie ⇒ JCookie }
 import scala.collection.immutable.Queue
-import scala.collection.JavaConverters._
-import spray.http.parser.HttpParser
 
 object CookieHandler {
   def apply(): PipelineStage = {
-    val cookieJar = new CookieManager().getCookieStore() //gotta use the store directly cause CookieManager is busted in SE6
+    val cookieJar = new CookieJar
 
     new PipelineStage {
       def apply(context: PipelineContext, commandPL: CPL, eventPL: EPL): Pipelines =
         new Pipelines {
           import context.log
 
-          var uriQueue = Queue.empty[Uri]
-          val emptyJavaMap = Map.empty[String, List[String]].mapValues(_.asJava).asJava
+          var currentUri: Uri = _
 
           val commandPipeline: CPL = {
             case cmd @ HttpRequestPartRenderingContext(x: HttpRequest, ack) ⇒
-              val currentUri = x.uri
-              uriQueue = uriQueue enqueue currentUri
+              currentUri = x.uri
 
-              val cookieList = cookieJar.get(currentUri.toJUri).asScala.toList.map { javaCookie ⇒
-                HttpHeaders.RawHeader("Cookie", javaCookie.toString)
+              val cookiedRequest = cookieJar.get(currentUri) match {
+                case Some(cookieList) ⇒
+                  x.withHeaders(x.headers ++ List(HttpHeaders.`Cookie`(cookieList)))
+                case None ⇒
+                  x
               }
-
-              val (erroredHeaders,parsedHeaders) = HttpParser.parseHeaders(cookieList)
-              if (erroredHeaders.size > 0) {
-                log.warning("Error parsing the following cookies in the jar: {}", erroredHeaders)
-              }
-
-              val cookiedRequest = x.withHeaders(x.headers ++ parsedHeaders)
 
               commandPL(HttpRequestPartRenderingContext(cookiedRequest, ack))
 
@@ -45,25 +36,45 @@ object CookieHandler {
 
           val eventPipeline: EPL = {
             case ev @ Http.MessageEvent(x: HttpResponse) ⇒
-              val currentUri = uriQueue.head
-              uriQueue = uriQueue.tail
 
-              val cookiesCombined = "set-cookie2: " + (x.headers.collect {
-                case c: HttpHeaders.`Set-Cookie` ⇒ c.value
-              }.mkString(","))
-
-              JCookie.parse(cookiesCombined).asScala.foreach { cookie ⇒
-                cookieJar.add(currentUri.toJUri, cookie)
+              val collectedCookieList = x.headers.collect {
+                case HttpHeaders.`Set-Cookie`(c) ⇒ c
               }
+
+              cookieJar.put(currentUri, collectedCookieList)
 
               eventPL(ev)
 
             case ev ⇒ eventPL(ev)
           }
-
-          def dispatch(receiver: ActorRef, msg: Any): Unit =
-            commandPL(Pipeline.Tell(receiver, msg, context.self))
         }
     }
+  }
+}
+
+class CookieJar {
+  val jar = Map.empty[Uri, List[HttpCookie]]
+
+  def put(u: Uri, c: HttpCookie) {
+    this.put(u, List(c))
+  }
+
+  def put(u: Uri, lc: List[HttpCookie]) {
+    val cookieList = this.get(u)
+    cookieList map { oldList ⇒ jar + (u -> (lc :: oldList)) }
+  }
+
+  def get(u: Uri): Option[List[HttpCookie]] = {
+    val optionOfFreshCookies = for {
+      maybeCookies ← jar.get(u)
+      freshCookies ← Some(maybeCookies.filter(_.secure))
+    } yield freshCookies
+
+    optionOfFreshCookies match {
+      case Some(fcl: List[HttpCookie]) ⇒ jar + (u -> fcl)
+      case None                        ⇒
+    }
+
+    optionOfFreshCookies
   }
 }

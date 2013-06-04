@@ -18,7 +18,6 @@
 package spray.http
 
 import java.lang.{ StringBuilder ⇒ JStringBuilder }
-import java.net.{ URI ⇒ JUri }
 import java.nio.charset.Charset
 import scala.annotation.tailrec
 import scala.collection.{ mutable, LinearSeqOptimized }
@@ -34,7 +33,6 @@ import Uri._
 sealed abstract case class Uri(scheme: String, authority: Authority, path: Path, query: Query,
                                fragment: Option[String]) extends ToStringRenderable {
 
-  def toJUri: JUri = new JUri(this.toString)
   def isAbsolute: Boolean = !isRelative
   def isRelative: Boolean = scheme.isEmpty
   def isEmpty: Boolean
