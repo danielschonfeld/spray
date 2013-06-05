@@ -1,11 +1,9 @@
 package spray.can.client
 
 import spray.io._
-import akka.actor.ActorRef
 import spray.can.Http
 import spray.http._
-import spray.can.rendering.HttpRequestPartRenderingContext
-import scala.collection.immutable.Queue
+import spray.can.rendering.{ RequestPartRenderingContext }
 
 object CookieHandler {
   def apply(): PipelineStage = {
@@ -15,11 +13,10 @@ object CookieHandler {
       def apply(context: PipelineContext, commandPL: CPL, eventPL: EPL): Pipelines =
         new Pipelines {
           import context.log
-
           var currentUri: Uri = _
 
           val commandPipeline: CPL = {
-            case cmd @ HttpRequestPartRenderingContext(x: HttpRequest, ack) ⇒
+            case cmd @ RequestPartRenderingContext(x: HttpRequest, ack) ⇒
               currentUri = x.uri
 
               val cookiedRequest = cookieJar.get(currentUri) match {
@@ -29,7 +26,7 @@ object CookieHandler {
                   x
               }
 
-              commandPL(HttpRequestPartRenderingContext(cookiedRequest, ack))
+              commandPL(RequestPartRenderingContext(cookiedRequest, ack))
 
             case cmd ⇒ commandPL(cmd)
           }
@@ -50,31 +47,25 @@ object CookieHandler {
         }
     }
   }
-}
 
-class CookieJar {
-  val jar = Map.empty[Uri, List[HttpCookie]]
+  private class CookieJar {
+    val jar = Map.empty[Uri, List[HttpCookie]]
 
-  def put(u: Uri, c: HttpCookie) {
-    this.put(u, List(c))
-  }
-
-  def put(u: Uri, lc: List[HttpCookie]) {
-    val cookieList = this.get(u)
-    cookieList map { oldList ⇒ jar + (u -> (lc :: oldList)) }
-  }
-
-  def get(u: Uri): Option[List[HttpCookie]] = {
-    val optionOfFreshCookies = for {
-      maybeCookies ← jar.get(u)
-      freshCookies ← Some(maybeCookies.filter(_.secure))
-    } yield freshCookies
-
-    optionOfFreshCookies match {
-      case Some(fcl: List[HttpCookie]) ⇒ jar + (u -> fcl)
-      case None                        ⇒
+    def put(u: Uri, c: HttpCookie) {
+      this.put(u, List(c))
     }
 
-    optionOfFreshCookies
+    def put(u: Uri, newList: List[HttpCookie]) {
+      val cookieList = this.get(u)
+      cookieList map { oldList ⇒ jar + (u -> (newList :: oldList)) }
+    }
+
+    def get(u: Uri): Option[List[HttpCookie]] =
+      jar.get(u).map { staleCookielist ⇒
+        val freshCookies = staleCookielist.filter(_.expires < Some(DateTime.now))
+        jar + (u -> freshCookies)
+        freshCookies
+      }
   }
 }
+
